@@ -1,12 +1,3 @@
-###################################################################
-#Chango -- A musical instrument
-#
-#Copyright Brandon Lucia 2010 
-#blucia@gmail.com
-##############################################
-#
-###################################################################
-
 //System Headers
 #include <string>
 #include <unistd.h>
@@ -16,13 +7,15 @@
 
 //Other Headers
 #include "SDL/SDL.h"
+#include "SDL/SDL_keyboard.h"
+#include "SDL/SDL_keysym.h"
 #include "audiere.h"
 #include "tones.h"
 
-
+#define TBACKOFF 3
 
 audiere::AudioDevicePtr device;
-#define NUM_FREQS 9 
+#define NUM_FREQS 9
 //float frequencies[] = {A3, B3, C4, D4, E4, F4, G4, A4, B4, C5, D5, E5, F5, G5, A5, B5, C6, D6, E6, F6, G6, A6, B6, C7, D7, E7, F7, G7, A7, B7, C8}; //c major scale
 //float frequencies[] = {A3,  D4, G4, C5, F5, B5, E6, A6, D7, G7, C8}; //ascending 4ths c major scale
 float frequencies[] = {C4, D4, E4, Fsharp5, Gsharp5, Asharp5, C5, D5, E5}; //whole tones
@@ -36,81 +29,15 @@ const int FRAMES_PER_SECOND = 10;
 const int BARLIFETIME = 50;
 const int NUMROWS = 3;
 const int NUMCOLS = 3;
-/*
-int keyMap( int k ){
-  if(NUMROWS == 3){
 
-    switch( k ){
-
-      case SDLK_Q:
-        return 0;
-      case SDLK_W:
-        return 1;
-      case SDLK_E:
-        return 2;
-  
-      case SDLK_A:
-        return 3;
-      case SDLK_S:
-        return 4;
-      case SDLK_D:
-        return 5;
-  
-      case SDLK_Z:
-        return 6;
-      case SDLK_X:
-        return 7;
-      case SDLK_C:
-        return 8;
-    }
-
-  }
-
-
-  if(NUMROWS == 4){
-
-    switch( k ){
-
-      case SDLK_Q:
-        return 0;
-      case SDLK_W:
-        return 1;
-      case SDLK_E:
-        return 2;
-      case SDLK_R:
-        return 3;
-  
-      case SDLK_A:
-        return 4;
-      case SDLK_S:
-        return 5;
-      case SDLK_D:
-        return 6;
-      case SDLK_F:
-        return 7;
-  
-      case SDLK_Z:
-        return 8;
-      case SDLK_X:
-        return 9;
-      case SDLK_C:
-        return 10;
-      case SDLK_V:
-        return 11;
-    }
-
-  }
-
-  return 0;
-  
-}
-*/
+const SDLKey keymap3[9] = {SDLK_q, SDLK_a, SDLK_z,
+                           SDLK_w, SDLK_s, SDLK_x,
+                           SDLK_e, SDLK_d, SDLK_c};
 //Surfaces
 SDL_Surface *canvas = NULL;
 SDL_Surface *screen = NULL;
 
 SDL_Event event;
-
 
 //Timer
 class Timer{
@@ -175,9 +102,12 @@ public:
   SDL_Rect rect;
   ChangoColor col;
   ChangoPoint ctr;
+  SDLKey key; 
+  float lastKnownAmplitude;
 
-  int lifetime;
-  int age;
+  bool on;
+  int toggleBackoff;
+  bool bent;
 
   ChangoGrid *mom;
   audiere::OutputStreamPtr toneGen;
@@ -187,6 +117,7 @@ public:
 
   void Draw(SDL_Surface *c);
   void Update(int mousex, int mousey);
+  void KeyUpdate(Uint8 *keystates);
 
 };
 
@@ -209,10 +140,15 @@ public:
 ChangoCell::ChangoCell(){
   ctr.x = ctr.y = rect.x = rect.y = rect.h = rect.w = id = col.r = col.g = col.b = 0;
   mom = NULL;
+  bent = false;
 }
 
 ChangoCell::ChangoCell(int x, int y, int w, int h, int ID,ChangoGrid *m){
 
+
+  on = true;
+  bent = false;
+  toggleBackoff = 0;
   id = ID;
 
   rect.x = x;
@@ -224,6 +160,12 @@ ChangoCell::ChangoCell(int x, int y, int w, int h, int ID,ChangoGrid *m){
   col.r = col.g = col.b = 0;
   ctr.x = x + (((float)mom->cellwidth) / 2);
   ctr.y = y + (((float)mom->cellheight) / 2);
+
+  if(mom->numrows == 3){
+    key = keymap3[ID];//only works for 3 for now.
+  }else{
+    key = SDLK_UNKNOWN;
+  }
   
   toneGen = audiere::OpenSound(device,audiere::CreateTone(frequencies[ID % NUM_FREQS]));
   if(toneGen == NULL){
@@ -238,22 +180,99 @@ void ChangoCell::Draw(SDL_Surface *c){
 
 }
 
-void ChangoCell::Update(int mousex, int mousey){
+void ChangoCell::KeyUpdate(Uint8 *keystates){
 
-  float xDiff = (float)mousex - (float)ctr.x;
-  float yDiff = (float)mousey - (float)ctr.y;
-  float scaleFactor = (( sqrt(xDiff*xDiff + yDiff * yDiff) ) / ((float)longest));
-  this->col.b = 255.0  * (scaleFactor);
-  if(scaleFactor > 0){
+  if( this->toggleBackoff > 0){
 
-    toneGen->setVolume((0.7 - scaleFactor) / ((float)mom->numrows));
-    if(!toneGen->isPlaying()){
-      toneGen->play();
+    this->toggleBackoff--;
+
+  }
+
+  if( keystates[ this->key ] == 1 ){
+
+    if( keystates[ SDLK_LSHIFT ] == 1){ 
+
+      if(this->toggleBackoff == 0){
+        this->toggleBackoff = TBACKOFF;
+        if(this->on){
+
+          this->col.b = 0;
+          this->col.g = 0;
+          this->on = false;
+          this->bent = false;
+          if(this->toneGen->isPlaying()){
+            this->toneGen->stop();
+          }
+          
+
+        }else{
+          
+          this->col.b = 255.0 * this->lastKnownAmplitude;
+          this->on = true;
+          this->bent = false;
+          if(!this->toneGen->isPlaying()){
+            this->toneGen->setVolume( (.7 - lastKnownAmplitude) / mom->numrows );
+            this->toneGen->play();
+          }
+
+        }
+      }
+
+    }else{
+
+      bent = true;
+
     }
 
   }else{
+    bent = false;
+  }
 
-    toneGen->stop();
+}
+
+void ChangoCell::Update(int mousex, int mousey){
+
+
+  float xDiff = (float)mousex - (float)ctr.x;
+  float yDiff = (float)mousey - (float)ctr.y;
+
+  float scaleFactor = (( sqrt(xDiff * xDiff + yDiff * yDiff) ) / ((float)longest));
+  lastKnownAmplitude = scaleFactor; 
+
+  if(!this->on){
+
+    this->col.b = 0;
+    if(this->toneGen->isPlaying()){
+      this->toneGen->stop();
+    }
+
+  }else{
+ 
+    if(this->bent){
+      this->col.g = 100;
+      this->toneGen->setPitchShift(2.0);
+    }else{
+      this->col.g = 0;
+      this->toneGen->setPitchShift(1.0);
+    }
+   
+    this->col.b = 255.0  * (scaleFactor);
+  
+    if(scaleFactor > 0){
+  
+      toneGen->setVolume((0.7 - scaleFactor) / ((float)mom->numrows));
+  
+      if(!toneGen->isPlaying()){
+  
+        toneGen->play();
+  
+      }
+  
+    }else{
+  
+      toneGen->stop();
+  
+    }
 
   }
 
@@ -288,7 +307,7 @@ ChangoGrid::ChangoGrid(int NumRows, int NumCols){
 
     for(int j = 0; j < this->numcols; j++){
       
-      this->cells[i * numcols + j] = ChangoCell(i * cellwidth, j * cellheight, cellwidth, cellheight,i*j, this);
+      this->cells[i * numcols + j] = ChangoCell(i * cellwidth, j * cellheight, cellwidth, cellheight, i * this->numcols + j, this);
   
     }
 
@@ -490,15 +509,21 @@ int main( int argc, char* args[] )
       //Start the frame timer
       fps.start();
 
-      /*for pitch bending*/
-      //if(NUMROWS == 3 || NUMROWS == 4){
-       // Uint8 *keystates = SDL_GetKeyState(NULL);
-       // if(keystates   
-      //}
       
+      Uint8 *keystates = SDL_GetKeyState(NULL);
+      int x; int y; 
+      Uint8 bmask = SDL_GetMouseState(&x,&y);
+
+      for(int i = 0; i < G.numrows * G.numcols; i++){
+        G.cells[i].KeyUpdate(keystates);
+        G.cells[i].Update(x,y);
+      }
+
+
       //While there's events to handle
       while( SDL_PollEvent( &event ) ) {
- 
+
+        /* 
         if( event.type == SDL_MOUSEMOTION ){
 
           int x = event.motion.x;
@@ -509,6 +534,7 @@ int main( int argc, char* args[] )
           } 
 
         }
+        */
  
         //If the user has Xed out the window
         if( event.type == SDL_QUIT ) {
