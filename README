@@ -1,0 +1,14 @@
+###################################################################
+#Chango -- A musical instrument
+#
+#Copyright Brandon Lucia 2010 
+#blucia@gmail.com
+##############################################
+#
+###################################################################
+
+Chango is a program that functions as a musical instrument.  The program
+creates a grid of squares on the screen.  Each square emits a tone.  Your mouse
+'activates' a square.  This will change its color (for the player to see what's
+happening), and will change the volume of the tone being emitted by that
+square.  The degree of activation depends on the distance that your mouse cursor is from the square's center.  Dead-center is 100%, and the activation tapers off with increased distance.
