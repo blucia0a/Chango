@@ -1,3 +1,12 @@
+###################################################################
+#Chango -- A musical instrument
+#
+#Copyright Brandon Lucia 2010 
+#blucia@gmail.com
+##############################################
+#
+###################################################################
+
 //System Headers
 #include <string>
 #include <unistd.h>
